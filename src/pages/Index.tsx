@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Copy, Send, Key, CreditCard, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Copy, Send, Key, CreditCard, AlertCircle, CheckCircle, Loader2, ExternalLink } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 const Index = () => {
@@ -42,6 +43,7 @@ const Index = () => {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentResponse, setPaymentResponse] = useState(null);
   const [lastError, setLastError] = useState(null);
+  const [corsProxyEnabled, setCorsProxyEnabled] = useState(false);
 
   // Generate OAuth token
   const generateToken = async () => {
@@ -50,20 +52,40 @@ const Index = () => {
     setLastError(null);
 
     try {
-      // Use CORS proxy for the Pine Labs API call
-      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-      const targetUrl = 'https://api.pluralonline.com/oauth2/token';
+      let response;
+      let url = 'https://api.pluralonline.com/oauth2/token';
       
-      const response = await fetch(proxyUrl + targetUrl, {
+      if (corsProxyEnabled) {
+        // Use CORS proxy if enabled
+        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+        url = proxyUrl + url;
+      }
+      
+      response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
+          ...(corsProxyEnabled && { 'X-Requested-With': 'XMLHttpRequest' })
         },
         body: JSON.stringify(credentials)
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      console.log('Response status:', response.status);
+      console.log('Response text:', responseText);
+
+      // Check if response is HTML (CORS proxy error page)
+      if (responseText.trim().startsWith('<') || responseText.includes('cors-anywhere')) {
+        throw new Error('CORS proxy access denied. Please visit the CORS demo page first.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        throw new Error(`Invalid JSON response: ${responseText.substring(0, 100)}...`);
+      }
+
       setTokenResponse(data);
 
       if (response.ok && data.access_token) {
@@ -80,11 +102,27 @@ const Index = () => {
         });
       }
     } catch (error) {
-      setLastError({
-        type: 'network_error',
-        message: 'Failed to connect to Pine Labs API. Try enabling CORS proxy or use a backend service.',
-        details: error.message
-      });
+      console.error('Token generation error:', error);
+      
+      if (error.message.includes('CORS proxy access denied')) {
+        setLastError({
+          type: 'cors_error',
+          message: 'CORS proxy requires access approval. Click the link below to request access first.',
+          details: error.message
+        });
+      } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        setLastError({
+          type: 'cors_error',
+          message: 'CORS blocking detected. Enable CORS proxy or use a backend service.',
+          details: 'Browser is blocking cross-origin requests to Pine Labs API'
+        });
+      } else {
+        setLastError({
+          type: 'network_error',
+          message: 'Failed to connect to Pine Labs API.',
+          details: error.message
+        });
+      }
     } finally {
       setTokenLoading(false);
     }
@@ -108,21 +146,39 @@ const Index = () => {
     try {
       const payload = JSON.parse(paymentPayload);
       
-      // Use CORS proxy for the Pine Labs API call
-      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-      const targetUrl = 'https://api.pluralonline.com/v1/payments';
+      let url = 'https://api.pluralonline.com/v1/payments';
       
-      const response = await fetch(proxyUrl + targetUrl, {
+      if (corsProxyEnabled) {
+        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+        url = proxyUrl + url;
+      }
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
-          'X-Requested-With': 'XMLHttpRequest'
+          ...(corsProxyEnabled && { 'X-Requested-With': 'XMLHttpRequest' })
         },
         body: JSON.stringify(payload)
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      console.log('Payment response status:', response.status);
+      console.log('Payment response text:', responseText);
+
+      // Check if response is HTML (CORS proxy error page)
+      if (responseText.trim().startsWith('<') || responseText.includes('cors-anywhere')) {
+        throw new Error('CORS proxy access denied. Please visit the CORS demo page first.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        throw new Error(`Invalid JSON response: ${responseText.substring(0, 100)}...`);
+      }
+
       setPaymentResponse(data);
 
       if (response.ok) {
@@ -139,16 +195,30 @@ const Index = () => {
         });
       }
     } catch (error) {
-      if (error instanceof SyntaxError) {
+      console.error('Payment error:', error);
+      
+      if (error instanceof SyntaxError || error.message.includes('JSON')) {
         setLastError({
           type: 'json_error',
           message: 'Invalid JSON payload. Please check your syntax.',
           details: error.message
         });
+      } else if (error.message.includes('CORS proxy access denied')) {
+        setLastError({
+          type: 'cors_error',
+          message: 'CORS proxy requires access approval. Click the link below to request access first.',
+          details: error.message
+        });
+      } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        setLastError({
+          type: 'cors_error',
+          message: 'CORS blocking detected. Enable CORS proxy or use a backend service.',
+          details: 'Browser is blocking cross-origin requests to Pine Labs API'
+        });
       } else {
         setLastError({
           type: 'network_error',
-          message: 'Failed to send payment request. Try enabling CORS proxy or use a backend service.',
+          message: 'Failed to send payment request.',
           details: error.message
         });
       }
@@ -170,6 +240,7 @@ const Index = () => {
       case 'token_error': return 'bg-orange-100 text-orange-800';
       case 'payment_error': return 'bg-red-100 text-red-800';
       case 'json_error': return 'bg-yellow-100 text-yellow-800';
+      case 'cors_error': return 'bg-purple-100 text-purple-800';
       default: return 'bg-red-100 text-red-800';
     }
   };
@@ -187,14 +258,44 @@ const Index = () => {
         <Alert className="border-blue-200 bg-blue-50">
           <AlertCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription>
-            <div className="space-y-2">
-              <p className="font-medium text-blue-800">CORS Proxy Required</p>
-              <p className="text-sm text-blue-700">
-                This tool uses a CORS proxy to bypass browser security restrictions. 
-                For production use, implement API calls through your backend service.
-              </p>
-              <p className="text-xs text-blue-600">
-                If requests still fail, try visiting <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" rel="noopener noreferrer" className="underline">cors-anywhere demo</a> and request temporary access.
+            <div className="space-y-3">
+              <div>
+                <p className="font-medium text-blue-800">CORS Issue Detected</p>
+                <p className="text-sm text-blue-700">
+                  The CORS proxy requires approval. Please follow these steps:
+                </p>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">1.</span>
+                  <a 
+                    href="https://cors-anywhere.herokuapp.com/corsdemo" 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                  >
+                    Visit CORS Anywhere Demo <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">2.</span>
+                  <span className="text-blue-700">Click "Request temporary access to the demo server"</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">3.</span>
+                  <label className="flex items-center gap-2 text-blue-700">
+                    <input
+                      type="checkbox"
+                      checked={corsProxyEnabled}
+                      onChange={(e) => setCorsProxyEnabled(e.target.checked)}
+                      className="rounded"
+                    />
+                    Enable CORS proxy for API calls
+                  </label>
+                </div>
+              </div>
+              <p className="text-xs text-blue-600 bg-blue-100 p-2 rounded">
+                💡 <strong>Alternative:</strong> For production, implement API calls through your backend service to avoid CORS issues entirely.
               </p>
             </div>
           </AlertDescription>
@@ -216,6 +317,18 @@ const Index = () => {
               <p className="font-medium text-red-800">{lastError.message}</p>
               {lastError.details && (
                 <p className="text-sm text-red-600 mt-1">{lastError.details}</p>
+              )}
+              {lastError.type === 'cors_error' && (
+                <div className="mt-2">
+                  <a 
+                    href="https://cors-anywhere.herokuapp.com/corsdemo" 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1 text-sm"
+                  >
+                    → Request CORS proxy access <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
               )}
             </AlertDescription>
           </Alert>
@@ -403,19 +516,19 @@ const Index = () => {
           <CardContent>
             <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-600">
               <div>
+                <h4 className="font-medium text-gray-900 mb-2">CORS Solutions:</h4>
+                <ul className="space-y-1">
+                  <li>• Request access to the CORS proxy demo</li>
+                  <li>• Use a backend service for production</li>
+                  <li>• Browser extensions can disable CORS (dev only)</li>
+                </ul>
+              </div>
+              <div>
                 <h4 className="font-medium text-gray-900 mb-2">Common Errors:</h4>
                 <ul className="space-y-1">
                   <li>• <code className="bg-gray-100 px-1 rounded">invalid_client</code> - Check client ID/secret</li>
                   <li>• <code className="bg-gray-100 px-1 rounded">invalid_request</code> - Verify payload format</li>
-                  <li>• <code className="bg-gray-100 px-1 rounded">insufficient_funds</code> - Test account limits</li>
-                </ul>
-              </div>
-              <div>
-                <h4 className="font-medium text-gray-900 mb-2">Test Credentials:</h4>
-                <ul className="space-y-1">
-                  <li>• Pre-filled credentials are for testing</li>
-                  <li>• Replace with your production keys</li>
-                  <li>• All requests go to Pine Labs API directly</li>
+                  <li>• <code className="bg-gray-100 px-1 rounded">CORS error</code> - Enable proxy or use backend</li>
                 </ul>
               </div>
             </div>
