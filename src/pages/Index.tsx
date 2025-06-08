@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,10 +50,15 @@ const Index = () => {
     setLastError(null);
 
     try {
-      const response = await fetch('https://api.pluralonline.com/oauth2/token', {
+      // Use CORS proxy for the Pine Labs API call
+      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+      const targetUrl = 'https://api.pluralonline.com/oauth2/token';
+      
+      const response = await fetch(proxyUrl + targetUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
         },
         body: JSON.stringify(credentials)
       });
@@ -78,7 +82,7 @@ const Index = () => {
     } catch (error) {
       setLastError({
         type: 'network_error',
-        message: 'Failed to connect to Pine Labs API. Check your internet connection.',
+        message: 'Failed to connect to Pine Labs API. Try enabling CORS proxy or use a backend service.',
         details: error.message
       });
     } finally {
@@ -104,11 +108,16 @@ const Index = () => {
     try {
       const payload = JSON.parse(paymentPayload);
       
-      const response = await fetch('https://api.pluralonline.com/v1/payments', {
+      // Use CORS proxy for the Pine Labs API call
+      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+      const targetUrl = 'https://api.pluralonline.com/v1/payments';
+      
+      const response = await fetch(proxyUrl + targetUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'X-Requested-With': 'XMLHttpRequest'
         },
         body: JSON.stringify(payload)
       });
@@ -139,7 +148,7 @@ const Index = () => {
       } else {
         setLastError({
           type: 'network_error',
-          message: 'Failed to send payment request',
+          message: 'Failed to send payment request. Try enabling CORS proxy or use a backend service.',
           details: error.message
         });
       }
@@ -173,6 +182,23 @@ const Index = () => {
           <h1 className="text-3xl font-bold text-gray-900">Pine Labs API Tester</h1>
           <p className="text-gray-600 mt-2">Quick payment API integration testing with zero setup friction</p>
         </div>
+
+        {/* CORS Notice */}
+        <Alert className="border-blue-200 bg-blue-50">
+          <AlertCircle className="h-4 w-4 text-blue-600" />
+          <AlertDescription>
+            <div className="space-y-2">
+              <p className="font-medium text-blue-800">CORS Proxy Required</p>
+              <p className="text-sm text-blue-700">
+                This tool uses a CORS proxy to bypass browser security restrictions. 
+                For production use, implement API calls through your backend service.
+              </p>
+              <p className="text-xs text-blue-600">
+                If requests still fail, try visiting <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" rel="noopener noreferrer" className="underline">cors-anywhere demo</a> and request temporary access.
+              </p>
+            </div>
+          </AlertDescription>
+        </Alert>
 
         {/* Error Display */}
         {lastError && (
